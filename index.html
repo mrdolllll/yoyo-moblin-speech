@@ -6,13 +6,13 @@
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0">
 
-  <title>YOYO Moblin Speech Test</title>
+  <title>YOYO Moblin Speech</title>
 
   <style>
     body {
       margin: 0;
-      padding: 20px;
-      background: rgba(0, 0, 0, 0.75);
+      padding: 18px;
+      background: rgba(0,0,0,0.70);
       color: white;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
@@ -20,58 +20,252 @@
     #status {
       font-size: 20px;
       color: #7CFF7C;
-      margin-bottom: 15px;
+      margin-bottom: 10px;
     }
 
     #speech {
-      font-size: 30px;
+      font-size: 28px;
       line-height: 1.5;
     }
 
     #event {
-      margin-top: 15px;
-      font-size: 18px;
+      margin-top: 10px;
+      font-size: 17px;
       color: #FFD966;
+    }
+
+    #send {
+      margin-top: 10px;
+      font-size: 17px;
+      color: #80D8FF;
     }
   </style>
 </head>
 
-
 <body>
 
-  <div id="status">
-    正在等待 Moblin……
-  </div>
-
-  <div id="speech"></div>
-
-  <div id="event"></div>
-
+<div id="status">正在等待 Moblin……</div>
+<div id="speech"></div>
+<div id="event"></div>
+<div id="send"></div>
 
 <script>
 
-const status =
+// ==========================================
+// 只修改這一行
+// 貼上你的 Google Apps Script /exec 網址
+// ==========================================
+
+const APP_SCRIPT_URL =
+  'https://script.google.com/macros/s/AKfycbw-fKkbZxJwKrdV8wr0m2ha9SQDhOAxgJiTEsgLfCBBfttnAbwkhjFvd2ZXALUkbr4/exec';
+
+
+// API_SECRET 不寫在公開 GitHub
+// 它會從網址 # 後面讀取
+const API_SECRET =
+  decodeURIComponent(
+    window.location.hash.substring(1)
+  );
+
+
+const statusBox =
   document.getElementById('status');
 
-const speech =
+const speechBox =
   document.getElementById('speech');
 
 const eventBox =
   document.getElementById('event');
 
+const sendBox =
+  document.getElementById('send');
 
-function startMoblin() {
 
-  if (typeof moblin === 'undefined') {
+let activePhrase = false;
 
-    status.innerText =
-      '❌ 尚未偵測到 Moblin API';
+let latestPosition = 0;
+
+let latestText = '';
+
+let consumedUntil = 0;
+
+let pendingSegments = [];
+
+let sending = false;
+
+
+// ==========================================
+// 收集「還沒送出去」的新文字
+// ==========================================
+
+function collectNewSpeech() {
+
+  if (!activePhrase || !latestText) {
+    return;
+  }
+
+  const windowStart =
+    latestPosition;
+
+  const windowEnd =
+    latestPosition + latestText.length;
+
+
+  // Moblin 的字幕是 sliding window
+  // 如果前面的字已離開視窗，就從目前可見處開始
+  const startAbsolute =
+    Math.max(consumedUntil, windowStart);
+
+
+  if (startAbsolute >= windowEnd) {
+    return;
+  }
+
+
+  const startIndex =
+    startAbsolute - windowStart;
+
+
+  const newText =
+    latestText
+      .slice(startIndex)
+      .trim();
+
+
+  consumedUntil =
+    windowEnd;
+
+
+  if (newText) {
+
+    pendingSegments.push(newText);
+
+  }
+
+}
+
+
+// ==========================================
+// 送到 Apps Script → YouTube
+// ==========================================
+
+function sendToYouTube() {
+
+  if (sending) {
+    return;
+  }
+
+
+  // 即使講話還沒停，也先把新內容取出
+  collectNewSpeech();
+
+
+  if (pendingSegments.length === 0) {
+
+    sendBox.innerText =
+      '等待新的語音內容……';
+
+    return;
+
+  }
+
+
+  let fullText =
+    pendingSegments.join('，');
+
+
+  pendingSegments = [];
+
+
+  // YouTube 留言保留安全長度
+  const message =
+    fullText.substring(0, 170);
+
+
+  // 超過的文字留到下一次
+  const remainder =
+    fullText.substring(170).trim();
+
+
+  if (remainder) {
+    pendingSegments.unshift(remainder);
+  }
+
+
+  if (!API_SECRET) {
+
+    sendBox.innerText =
+      '❌ 網址沒有 API_SECRET';
 
     return;
   }
 
 
-  status.innerText =
+  sending = true;
+
+
+  sendBox.innerText =
+    '📤 正在送到 YouTube……';
+
+
+  const url =
+    APP_SCRIPT_URL +
+    '?token=' +
+    encodeURIComponent(API_SECRET) +
+    '&text=' +
+    encodeURIComponent(message) +
+    '&_ts=' +
+    Date.now();
+
+
+  // no-cors：
+  // 只需要把 GET request 送到 Apps Script
+  fetch(url, {
+    method: 'GET',
+    mode: 'no-cors',
+    cache: 'no-store'
+  })
+
+  .then(function() {
+
+    sendBox.innerText =
+      '✅ 已送出：' + message;
+
+    sending = false;
+
+  })
+
+  .catch(function(error) {
+
+    pendingSegments.unshift(message);
+
+    sendBox.innerText =
+      '❌ 發送失敗：' + error;
+
+    sending = false;
+
+  });
+
+}
+
+
+// ==========================================
+// Moblin
+// ==========================================
+
+function startMoblin() {
+
+  if (typeof moblin === 'undefined') {
+
+    statusBox.innerText =
+      '❌ 尚未偵測到 Moblin API';
+
+    return;
+
+  }
+
+
+  statusBox.innerText =
     '✅ Moblin API 已連接';
 
 
@@ -80,41 +274,103 @@ function startMoblin() {
   });
 
 
-  moblin.onmessage = function(message) {
-
-    if (message.speechToText !== undefined) {
-
-      const position =
-        message.speechToText.position;
-
-      const text =
-        message.speechToText.text;
+  moblin.onmessage =
+    function(message) {
 
 
-      speech.innerText =
-        '🎙 ' + text;
+      // ----------------------------
+      // 收到即時語音
+      // ----------------------------
+
+      if (
+        message.speechToText !== undefined
+      ) {
+
+        const position =
+          Number(
+            message.speechToText.position
+          );
+
+        const text =
+          String(
+            message.speechToText.text || ''
+          );
 
 
-      eventBox.innerText =
-        'position：' + position +
-        ' ｜ 收到語音事件';
-    }
+        // 新的一段語音開始
+        if (!activePhrase) {
+
+          activePhrase = true;
+
+          consumedUntil =
+            position;
+
+        }
 
 
-    if (message.speechToTextClear !== undefined) {
+        latestPosition =
+          position;
 
-      eventBox.innerText =
-        '✅ Transcript cleared';
+        latestText =
+          text;
 
-      speech.innerText = '';
-    }
 
-  };
+        speechBox.innerText =
+          '🎙 ' + text;
+
+
+        eventBox.innerText =
+          'position：' +
+          position +
+          ' ｜ 收到語音';
+
+      }
+
+
+      // ----------------------------
+      // Moblin 判斷一段話結束
+      // ----------------------------
+
+      if (
+        message.speechToTextClear !== undefined
+      ) {
+
+        // 先把最後尚未收集的文字保存
+        collectNewSpeech();
+
+
+        activePhrase = false;
+
+        latestText = '';
+
+
+        speechBox.innerText = '';
+
+
+        eventBox.innerText =
+          '✅ Transcript cleared';
+
+      }
+
+    };
 
 }
 
 
-setTimeout(startMoblin, 1000);
+// ==========================================
+// 每 10 秒最多送一次
+// ==========================================
+
+setInterval(
+  sendToYouTube,
+  10000
+);
+
+
+setTimeout(
+  startMoblin,
+  1000
+);
 
 </script>
 
