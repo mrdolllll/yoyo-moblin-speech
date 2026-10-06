@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>YOYO Moblin Speech Test</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    #status {
+      font-size: 20px;
+      color: #7CFF7C;
+      margin-bottom: 15px;
+    }
+
+    #speech {
+      font-size: 30px;
+      line-height: 1.5;
+    }
+
+    #event {
+      margin-top: 15px;
+      font-size: 18px;
+      color: #FFD966;
+    }
+  </style>
+</head>
+
+
+<body>
+
+  <div id="status">
+    正在等待 Moblin……
+  </div>
+
+  <div id="speech"></div>
+
+  <div id="event"></div>
+
+
+<script>
+
+const status =
+  document.getElementById('status');
+
+const speech =
+  document.getElementById('speech');
+
+const eventBox =
+  document.getElementById('event');
+
+
+function startMoblin() {
+
+  if (typeof moblin === 'undefined') {
+
+    status.innerText =
+      '❌ 尚未偵測到 Moblin API';
+
+    return;
+  }
+
+
+  status.innerText =
+    '✅ Moblin API 已連接';
+
+
+  moblin.subscribe({
+    speechToText: {}
+  });
+
+
+  moblin.onmessage = function(message) {
+
+    if (message.speechToText !== undefined) {
+
+      const position =
+        message.speechToText.position;
+
+      const text =
+        message.speechToText.text;
+
+
+      speech.innerText =
+        '🎙 ' + text;
+
+
+      eventBox.innerText =
+        'position：' + position +
+        ' ｜ 收到語音事件';
+    }
+
+
+    if (message.speechToTextClear !== undefined) {
+
+      eventBox.innerText =
+        '✅ Transcript cleared';
+
+      speech.innerText = '';
+    }
+
+  };
+
+}
+
+
+setTimeout(startMoblin, 1000);
+
+</script>
+
+</body>
+</html>
